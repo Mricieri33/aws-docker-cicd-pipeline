@@ -54,7 +54,8 @@ O workflow [`deploy.yml`](/home/mricieri33/App/.github/workflows/deploy.yml:1) f
 - `AWS_SECRET`
 - `AWS_REGION`
 - `ECR_REPO`
-- `EC2_INSTANCE_ID`
+
+`EC2_INSTANCE_ID` deixa de ser obrigatorio se a instancia puder ser encontrada pela tag `Name`.
 
 ### Variables opcionais
 
@@ -62,6 +63,7 @@ O workflow [`deploy.yml`](/home/mricieri33/App/.github/workflows/deploy.yml:1) f
 - `CONTAINER_NAME`
 - `HOST_PORT`
 - `CONTAINER_PORT`
+- `EC2_TAG_NAME`
 
 Se as variables nao forem definidas, o workflow usa:
 
@@ -69,6 +71,7 @@ Se as variables nao forem definidas, o workflow usa:
 - `CONTAINER_NAME=devops-app`
 - `HOST_PORT=80`
 - `CONTAINER_PORT=3000`
+- `EC2_TAG_NAME=app-ec2`
 
 ## Deploy automatico na EC2
 
@@ -90,6 +93,8 @@ docker rm -f <CONTAINER_NAME> || true
 docker run -d --name <CONTAINER_NAME> --restart unless-stopped -p <HOST_PORT>:<CONTAINER_PORT> <ECR_REPO>:<GITHUB_SHA>
 curl http://127.0.0.1:<HOST_PORT>/health
 ```
+
+Se `EC2_INSTANCE_ID` nao estiver definido, a Action procura uma unica instancia em estado `running` com `tag:Name=<EC2_TAG_NAME>`. Se nenhuma ou mais de uma instancia for encontrada, o job falha antes do `send-command` com erro explicito.
 
 O deploy remove o container atual e sobe o novo automaticamente pela Action.
 
