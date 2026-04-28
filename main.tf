@@ -16,12 +16,6 @@ variable "instance_type" {
   default     = "t2.micro"
 }
 
-variable "ssh_cidr" {
-  description = "CIDR allowed to access the instance over SSH."
-  type        = string
-  default     = "0.0.0.0/0"
-}
-
 variable "bucket_name" {
   description = "Globally unique S3 bucket name."
   type        = string
@@ -53,22 +47,19 @@ resource "aws_iam_role_policy_attachment" "ecr_readonly" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
+resource "aws_iam_role_policy_attachment" "ssm_core" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
 resource "aws_iam_instance_profile" "ec2_profile" {
   name = "app-ec2-profile"
   role = aws_iam_role.ec2_role.name
 }
 
 resource "aws_security_group" "app_sg" {
-  name        = "app-manual-deploy-sg"
-  description = "Allow SSH and HTTP access to the application instance."
-
-  ingress {
-    description = "SSH"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = [var.ssh_cidr]
-  }
+  name        = "app-deploy-sg"
+  description = "Allow HTTP access to the application instance."
 
   ingress {
     description = "HTTP"
@@ -92,11 +83,17 @@ resource "aws_instance" "app" {
   iam_instance_profile = aws_iam_instance_profile.ec2_profile.name
   vpc_security_group_ids = [aws_security_group.app_sg.id]
 
+  tags = {
+    Name = "app-ec2"
+  }
+
   user_data = <<-EOF
               #!/bin/bash
               yum install -y docker awscli
               systemctl enable docker
               systemctl start docker
+              systemctl enable amazon-ssm-agent
+              systemctl start amazon-ssm-agent
               usermod -a -G docker ec2-user
               EOF
 }

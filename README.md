@@ -42,7 +42,7 @@ O workflow [`deploy.yml`](/home/mricieri33/App/.github/workflows/deploy.yml:1) f
 4. build da imagem Docker
 5. tag com o `GITHUB_SHA`
 6. push da imagem para o ECR com as tags `GITHUB_SHA` e `latest`
-7. conexao por SSH na EC2
+7. execucao remota na EC2 via AWS Systems Manager (SSM)
 8. pull da nova imagem
 9. remocao do container atual
 10. subida do novo container
@@ -54,19 +54,18 @@ O workflow [`deploy.yml`](/home/mricieri33/App/.github/workflows/deploy.yml:1) f
 - `AWS_SECRET`
 - `AWS_REGION`
 - `ECR_REPO`
-- `EC2_HOST`
-- `EC2_KEY`
+- `EC2_INSTANCE_ID`
 
 ### Variables opcionais
 
-- `EC2_USER`
+- `IMAGE_NAME`
 - `CONTAINER_NAME`
 - `HOST_PORT`
 - `CONTAINER_PORT`
 
 Se as variables nao forem definidas, o workflow usa:
 
-- `EC2_USER=ec2-user`
+- `IMAGE_NAME=devops-app`
 - `CONTAINER_NAME=devops-app`
 - `HOST_PORT=80`
 - `CONTAINER_PORT=3000`
@@ -76,15 +75,16 @@ Se as variables nao forem definidas, o workflow usa:
 ### Pre-requisitos
 
 - EC2 com Docker e AWS CLI
-- IAM Role na EC2 com permissao de leitura no ECR
+- SSM Agent ativa na EC2
+- IAM Role na EC2 com permissao de leitura no ECR e `AmazonSSMManagedInstanceCore`
 - porta `80` liberada no Security Group
-- porta `22` liberada para o GitHub Actions ou para o IP de saida permitido por voce
 
 ### Fluxo de troca do container
 
 Quando houver push na branch `main` ou execucao manual do workflow:
 
 ```bash
+aws ssm send-command --instance-ids <EC2_INSTANCE_ID> ...
 docker pull <ECR_REPO>:<GITHUB_SHA>
 docker rm -f <CONTAINER_NAME> || true
 docker run -d --name <CONTAINER_NAME> --restart unless-stopped -p <HOST_PORT>:<CONTAINER_PORT> <ECR_REPO>:<GITHUB_SHA>
@@ -112,10 +112,11 @@ docker run -p 3000:3000 devops-app
 O [`main.tf`](/home/mricieri33/App/main.tf:1) prepara:
 
 - EC2
-- Security Group com `22` e `80`
-- IAM Role/Profile para leitura no ECR
+- Security Group com `80`
+- IAM Role/Profile para leitura no ECR e gerenciamento por SSM
 - bucket S3 parametrizado
 - instalacao de Docker e AWS CLI via `user_data`
+- inicializacao do `amazon-ssm-agent`
 
 ## Observacoes
 
@@ -123,3 +124,4 @@ O [`main.tf`](/home/mricieri33/App/main.tf:1) prepara:
 - o container publica `80:3000` na EC2
 - o `HEALTHCHECK` usa `/health`
 - o deploy na EC2 e automatico via GitHub Actions
+- a Action nao depende de SSH aberto na internet
