@@ -9,8 +9,7 @@ O projeto faz:
 - build da imagem Docker a partir da aplicacao Express
 - push da imagem para o Amazon ECR
 - deploy remoto em uma instancia EC2 via SSH
-- validacao da nova versao com healthcheck antes da troca do container principal
-- rollback basico se a promocao da nova versao falhar
+- execucao simples do container na EC2 com `docker pull` e `docker run`
 
 ## Arquitetura
 
@@ -24,7 +23,6 @@ Docker Build
 Amazon ECR
   ↓
 EC2
-  ├─ container candidato
   └─ container principal
   ↓
 Browser
@@ -71,10 +69,9 @@ Fluxo atual:
 3. Faz login no ECR.
 4. Gera a tag da imagem com o `GITHUB_SHA`.
 5. Builda e publica a imagem.
-6. Na EC2, sobe um container candidato em porta separada.
-7. Executa validacao de saude no candidato.
-8. Se estiver saudavel, promove a nova imagem para o container principal.
-9. Se a promocao falhar, tenta restaurar a imagem anterior.
+6. Na EC2, faz `docker pull` da nova imagem.
+7. Remove o container antigo.
+8. Sobe o novo container na porta configurada.
 
 ## Execucao local
 
@@ -119,7 +116,6 @@ curl http://localhost:3000/health
 - `IMAGE_NAME`
 - `CONTAINER_NAME`
 - `PORT`
-- `CANDIDATE_PORT`
 - `EC2_USER`
 
 Se essas variables nao forem definidas, o workflow usa fallback no proprio YAML.
@@ -136,7 +132,7 @@ Para a EC2, o Security Group deve permitir pelo menos:
 
 - A aplicacao escuta internamente na porta `3000`.
 - O `Dockerfile` possui `HEALTHCHECK` nativo usando `/health`.
-- O deploy atual reduz risco de downtime comparado ao fluxo que removia o container antigo antes de validar o novo.
+- O deploy atual e simples: atualiza a imagem no ECR e recria o container na EC2.
 - O arquivo `terraform.tfstate` existe no projeto, mas normalmente nao deveria ser versionado em repositorio compartilhado.
 
 ## Objetivo
@@ -146,4 +142,4 @@ Demonstrar pratica com:
 - containerizacao
 - pipeline CI/CD
 - integracao com AWS
-- deploy automatizado com validacao basica de saude
+- deploy automatizado com Docker, ECR e EC2
