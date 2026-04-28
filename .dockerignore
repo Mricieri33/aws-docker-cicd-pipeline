@@ -1,0 +1,9 @@
+node_modules/
+.git/
+.github/
+.terraform/
+*.tfstate
+*.tfstate.backup
+.env
+.env.*
+README.md

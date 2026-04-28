@@ -1,0 +1,108 @@
+name: Deploy to AWS (ECR + EC2)
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env: 
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REPO: ${{ secrets.ECR_REPO }}
+  IMAGE_NAME: ${{ vars.IMAGE_NAME || 'devops-app' }}
+  CONTAINER_NAME: ${{ vars.CONTAINER_NAME || 'devops-app' }}
+  PORT: ${{ vars.PORT || '80' }}
+  CANDIDATE_PORT: ${{ vars.CANDIDATE_PORT || '8080' }}
+  EC2_USER: ${{ vars.EC2_USER || 'ec2-user' }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_KEY }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2 
+
+      - name: Set image tag (commit SHA) 
+        run: echo "IMAGE_TAG=${GITHUB_SHA}" >> $GITHUB_ENV 
+        
+      - name: Build Docker image
+        run: | 
+          docker build -t $IMAGE_NAME:$IMAGE_TAG . 
+          
+      - name: Tag image for ECR 
+        run: | 
+          docker tag $IMAGE_NAME:$IMAGE_TAG $ECR_REPO:$IMAGE_TAG 
+
+      - name: Push image to ECR 
+        run: | 
+          docker push $ECR_REPO:$IMAGE_TAG
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with: 
+          host: ${{ secrets.EC2_HOST }} 
+          username: ${{ env.EC2_USER }} 
+          key: ${{ secrets.EC2_KEY }} 
+          script: | 
+            set -e
+
+            CANDIDATE_NAME="${CONTAINER_NAME}-candidate"
+            BACKUP_NAME="${CONTAINER_NAME}-backup"
+            PREVIOUS_IMAGE="$(docker inspect --format='{{.Config.Image}}' "$CONTAINER_NAME" 2>/dev/null || true)"
+
+            docker pull $ECR_REPO:$IMAGE_TAG
+            docker rm -f "$CANDIDATE_NAME" || true
+            docker rm -f "$BACKUP_NAME" || true
+
+            docker run -d \
+              --name "$CANDIDATE_NAME" \
+              -p $CANDIDATE_PORT:3000 \
+              $ECR_REPO:$IMAGE_TAG
+
+            for i in $(seq 1 12); do
+              if docker exec "$CANDIDATE_NAME" node -e "require('http').get('http://127.0.0.1:3000/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"; then
+                if docker ps -a --format '{{.Names}}' | grep -Fx "$CONTAINER_NAME" >/dev/null; then
+                  docker stop "$CONTAINER_NAME"
+                  docker rename "$CONTAINER_NAME" "$BACKUP_NAME"
+                fi
+
+                if docker run -d \
+                  --name "$CONTAINER_NAME" \
+                  -p $PORT:3000 \
+                  $ECR_REPO:$IMAGE_TAG; then
+                  docker rm -f "$CANDIDATE_NAME"
+                  docker rm -f "$BACKUP_NAME" || true
+                  exit 0
+                fi
+
+                docker rm -f "$CONTAINER_NAME" || true
+
+                if docker ps -a --format '{{.Names}}' | grep -Fx "$BACKUP_NAME" >/dev/null; then
+                  docker rename "$BACKUP_NAME" "$CONTAINER_NAME"
+                  docker start "$CONTAINER_NAME" || true
+                elif [ -n "$PREVIOUS_IMAGE" ]; then
+                  docker run -d \
+                    --name "$CONTAINER_NAME" \
+                    -p $PORT:3000 \
+                    "$PREVIOUS_IMAGE" || true
+                fi
+
+                docker rm -f "$CANDIDATE_NAME"
+                exit 1
+              fi
+              sleep 5
+            done
+
+            docker logs "$CANDIDATE_NAME" || true
+            docker rm -f "$CANDIDATE_NAME" || true
+            exit 1
