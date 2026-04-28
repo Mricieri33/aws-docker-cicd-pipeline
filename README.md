@@ -29,7 +29,7 @@ Browser
 
 ## Endpoints
 
-- `/health`
+- `/health` usado pelo `HEALTHCHECK` do Docker para validar se a aplicacao respondeu com `200 OK`
 - `/s3-check`
 
 ## Pipeline

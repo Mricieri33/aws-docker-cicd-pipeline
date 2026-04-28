@@ -1,4 +1,4 @@
-name: Build and Push to AWS ECR
+name: Deploy to AWS (ECR + EC2)
 
 on:
   push:
@@ -9,10 +9,11 @@ on:
 env: 
   AWS_REGION: ${{ secrets.AWS_REGION }}
   ECR_REPO: ${{ secrets.ECR_REPO }}
-  IMAGE_NAME: ${{ vars.IMAGE_NAME || 'devops-app' }}
+  CONTAINER_NAME: devops-app
+  PORT: 80
 
 jobs:
-  build-and-push:
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
@@ -29,8 +30,7 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2 
 
       - name: Set image tag (commit SHA) 
-        run: echo "IMAGE_TAG=${GITHUB_SHA}" >> $GITHUB_ENV 
-        
+            
       - name: Build Docker image
         run: | 
           docker build -t $IMAGE_NAME:$IMAGE_TAG . 
@@ -42,3 +42,17 @@ jobs:
       - name: Push image to ECR 
         run: | 
           docker push $ECR_REPO:$IMAGE_TAG
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with: 
+          host: ${{ secrets.EC2_HOST }} 
+          username: ec2-user 
+          key: ${{ secrets.EC2_KEY }} 
+          script: | 
+            docker pull $ECR_REPO:$IMAGE_TAG 
+            docker rm -f $CONTAINER_NAME || true 
+            docker run -d \ 
+              --name $CONTAINER_NAME \ 
+              -p $PORT:3000 \ 
+              $ECR_REPO:$IMAGE_TAG
