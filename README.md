@@ -1,19 +1,12 @@
 # AWS Docker CI/CD Pipeline
 
-Aplicacao Node.js com deploy automatizado na AWS usando Docker, Amazon ECR, EC2 e GitHub Actions.
+Aplicacao Node.js empacotada com Docker, publicada no Amazon ECR via GitHub Actions e executada manualmente em uma EC2.
 
-## Visao geral
-
-O projeto faz:
-
-- build da imagem Docker a partir da aplicacao Express
-- push da imagem para o Amazon ECR
-- deploy remoto em uma instancia EC2 via SSH
-- execucao simples do container na EC2 com `docker pull` e `docker run`
-
-## Arquitetura
+## Fluxo
 
 ```text
+Codigo
+  ↓
 GitHub
   ↓
 GitHub Actions
@@ -23,84 +16,32 @@ Docker Build
 Amazon ECR
   ↓
 EC2
-  └─ container principal
   ↓
 Browser
 ```
 
-## Stack
+## Componentes
 
-- Node.js
-- Express
-- Docker
-- GitHub Actions
-- AWS ECR
-- AWS EC2
-- Terraform
-
-## Estrutura
-
-```text
-.
-├── index.js
-├── package.json
-├── Dockerfile
-├── main.tf
-├── public/
-├── .github/
-│   └── workflows/
-│       └── deploy.yml
-└── README.md
-```
+- aplicacao Express em `index.js`
+- imagem Docker definida em `Dockerfile`
+- workflow de build e push em `.github/workflows/deploy.yml`
+- infraestrutura base em `main.tf`
 
 ## Endpoints
 
-- `/health`: endpoint simples para verificacao de saude da aplicacao
-- `/s3-check`: consulta buckets S3 usando as credenciais configuradas no ambiente
+- `/health`
+- `/s3-check`
 
-## Como funciona o deploy
+## Pipeline
 
-A pipeline em `deploy.yml` roda em `push` para `main` ou manualmente via `workflow_dispatch`.
+O workflow [`deploy.yml`](/home/mricieri33/App/.github/workflows/deploy.yml:1) faz apenas:
 
-Fluxo atual:
-
-1. Faz checkout do codigo.
-2. Configura credenciais AWS.
-3. Faz login no ECR.
-4. Gera a tag da imagem com o `GITHUB_SHA`.
-5. Builda e publica a imagem.
-6. Na EC2, faz `docker pull` da nova imagem.
-7. Remove o container antigo.
-8. Sobe o novo container na porta configurada.
-
-## Execucao local
-
-Instalacao:
-
-```bash
-npm install
-```
-
-Aplicacao:
-
-```bash
-node index.js
-```
-
-Container:
-
-```bash
-docker build -t devops-app .
-docker run -p 3000:3000 devops-app
-```
-
-Teste de saude:
-
-```bash
-curl http://localhost:3000/health
-```
-
-## Configuracao do GitHub Actions
+1. checkout do codigo
+2. configuracao das credenciais AWS
+3. login no ECR
+4. build da imagem Docker
+5. tag com o `GITHUB_SHA`
+6. push da imagem para o ECR
 
 ### Secrets obrigatorios
 
@@ -108,38 +49,96 @@ curl http://localhost:3000/health
 - `AWS_SECRET`
 - `AWS_REGION`
 - `ECR_REPO`
-- `EC2_HOST`
-- `EC2_KEY`
 
-### Variables recomendadas
+### Variable opcional
 
 - `IMAGE_NAME`
-- `CONTAINER_NAME`
-- `PORT`
-- `EC2_USER`
 
-Se essas variables nao forem definidas, o workflow usa fallback no proprio YAML.
+Se `IMAGE_NAME` nao for definida, o workflow usa `devops-app`.
 
-## Infraestrutura e rede
+## Deploy manual na EC2
 
-Para a EC2, o Security Group deve permitir pelo menos:
+### Pre-requisitos
 
-- porta `22` para SSH
-- porta `80` para acesso HTTP, ou a porta publicada em `PORT`
-- porta interna `3000` usada pela aplicacao dentro do container
+- EC2 com Docker instalado
+- AWS CLI instalada na EC2
+- IAM Role na EC2 com permissao de leitura no ECR
+- porta `80` liberada no Security Group
+- porta `22` liberada para o seu IP
+
+### 1. Conectar na instancia
+
+```bash
+ssh -i <SUA_CHAVE.pem> ec2-user@<EC2_PUBLIC_IP>
+```
+
+### 2. Fazer login no ECR
+
+```bash
+aws ecr get-login-password --region <AWS_REGION> | docker login --username AWS --password-stdin <ECR_REGISTRY>
+```
+
+Exemplo de `ECR_REGISTRY`:
+
+```text
+123456789012.dkr.ecr.us-east-1.amazonaws.com
+```
+
+### 3. Baixar a imagem
+
+```bash
+docker pull <ECR_REPO>:<IMAGE_TAG>
+```
+
+`IMAGE_TAG` normalmente sera o SHA do commit publicado pelo workflow.
+
+### 4. Subir ou atualizar o container
+
+```bash
+docker rm -f devops-app || true
+docker run -d --name devops-app -p 80:3000 <ECR_REPO>:<IMAGE_TAG>
+```
+
+### 5. Validar
+
+Na propria EC2:
+
+```bash
+curl http://localhost/health
+```
+
+De fora da instancia:
+
+```bash
+curl http://<EC2_PUBLIC_IP>/health
+```
+
+## Execucao local
+
+```bash
+npm install
+npm start
+```
+
+Ou com Docker:
+
+```bash
+docker build -t devops-app .
+docker run -p 3000:3000 devops-app
+```
+
+## Infraestrutura
+
+O [`main.tf`](/home/mricieri33/App/main.tf:1) prepara:
+
+- EC2
+- Security Group com `22` e `80`
+- IAM Role/Profile para leitura no ECR
+- bucket S3 parametrizado
 
 ## Observacoes
 
-- A aplicacao escuta internamente na porta `3000`.
-- O `Dockerfile` possui `HEALTHCHECK` nativo usando `/health`.
-- O deploy atual e simples: atualiza a imagem no ECR e recria o container na EC2.
-- O arquivo `terraform.tfstate` existe no projeto, mas normalmente nao deveria ser versionado em repositorio compartilhado.
-
-## Objetivo
-
-Demonstrar pratica com:
-
-- containerizacao
-- pipeline CI/CD
-- integracao com AWS
-- deploy automatizado com Docker, ECR e EC2
+- a aplicacao escuta na porta interna `3000`
+- o container publica `80:3000` na EC2
+- o `HEALTHCHECK` usa `/health`
+- o deploy na EC2 e manual
