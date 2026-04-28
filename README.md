@@ -1,6 +1,6 @@
 # AWS Docker CI/CD Pipeline
 
-Aplicacao Node.js empacotada com Docker, publicada no Amazon ECR via GitHub Actions e executada manualmente em uma EC2.
+Aplicacao Node.js empacotada com Docker, publicada no Amazon ECR via GitHub Actions e implantada automaticamente em uma EC2.
 
 ## Fluxo
 
@@ -24,7 +24,7 @@ Browser
 
 - aplicacao Express em `index.js`
 - imagem Docker definida em `Dockerfile`
-- workflow de build e push em `.github/workflows/deploy.yml`
+- workflow de build, push e deploy em `.github/workflows/deploy.yml`
 - infraestrutura base em `main.tf`
 
 ## Endpoints
@@ -34,14 +34,19 @@ Browser
 
 ## Pipeline
 
-O workflow [`deploy.yml`](/home/mricieri33/App/.github/workflows/deploy.yml:1) faz apenas:
+O workflow [`deploy.yml`](/home/mricieri33/App/.github/workflows/deploy.yml:1) faz:
 
 1. checkout do codigo
 2. configuracao das credenciais AWS
 3. login no ECR
 4. build da imagem Docker
 5. tag com o `GITHUB_SHA`
-6. push da imagem para o ECR
+6. push da imagem para o ECR com as tags `GITHUB_SHA` e `latest`
+7. conexao por SSH na EC2
+8. pull da nova imagem
+9. remocao do container atual
+10. subida do novo container
+11. validacao do endpoint `/health`
 
 ### Secrets obrigatorios
 
@@ -49,69 +54,44 @@ O workflow [`deploy.yml`](/home/mricieri33/App/.github/workflows/deploy.yml:1) f
 - `AWS_SECRET`
 - `AWS_REGION`
 - `ECR_REPO`
+- `EC2_HOST`
+- `EC2_KEY`
 
-### Variable opcional
+### Variables opcionais
 
-- `IMAGE_NAME`
+- `EC2_USER`
+- `CONTAINER_NAME`
+- `HOST_PORT`
+- `CONTAINER_PORT`
 
-Se `IMAGE_NAME` nao for definida, o workflow usa `devops-app`.
+Se as variables nao forem definidas, o workflow usa:
 
-## Deploy manual na EC2
+- `EC2_USER=ec2-user`
+- `CONTAINER_NAME=devops-app`
+- `HOST_PORT=80`
+- `CONTAINER_PORT=3000`
+
+## Deploy automatico na EC2
 
 ### Pre-requisitos
 
-- EC2 com Docker instalado
-- AWS CLI instalada na EC2
+- EC2 com Docker e AWS CLI
 - IAM Role na EC2 com permissao de leitura no ECR
 - porta `80` liberada no Security Group
-- porta `22` liberada para o seu IP
+- porta `22` liberada para o GitHub Actions ou para o IP de saida permitido por voce
 
-### 1. Conectar na instancia
+### Fluxo de troca do container
 
-```bash
-ssh -i <SUA_CHAVE.pem> ec2-user@<EC2_PUBLIC_IP>
-```
-
-### 2. Fazer login no ECR
+Quando houver push na branch `main` ou execucao manual do workflow:
 
 ```bash
-aws ecr get-login-password --region <AWS_REGION> | docker login --username AWS --password-stdin <ECR_REGISTRY>
+docker pull <ECR_REPO>:<GITHUB_SHA>
+docker rm -f <CONTAINER_NAME> || true
+docker run -d --name <CONTAINER_NAME> --restart unless-stopped -p <HOST_PORT>:<CONTAINER_PORT> <ECR_REPO>:<GITHUB_SHA>
+curl http://127.0.0.1:<HOST_PORT>/health
 ```
 
-Exemplo de `ECR_REGISTRY`:
-
-```text
-123456789012.dkr.ecr.us-east-1.amazonaws.com
-```
-
-### 3. Baixar a imagem
-
-```bash
-docker pull <ECR_REPO>:<IMAGE_TAG>
-```
-
-`IMAGE_TAG` normalmente sera o SHA do commit publicado pelo workflow.
-
-### 4. Subir ou atualizar o container
-
-```bash
-docker rm -f devops-app || true
-docker run -d --name devops-app -p 80:3000 <ECR_REPO>:<IMAGE_TAG>
-```
-
-### 5. Validar
-
-Na propria EC2:
-
-```bash
-curl http://localhost/health
-```
-
-De fora da instancia:
-
-```bash
-curl http://<EC2_PUBLIC_IP>/health
-```
+O deploy remove o container atual e sobe o novo automaticamente pela Action.
 
 ## Execucao local
 
@@ -135,10 +115,11 @@ O [`main.tf`](/home/mricieri33/App/main.tf:1) prepara:
 - Security Group com `22` e `80`
 - IAM Role/Profile para leitura no ECR
 - bucket S3 parametrizado
+- instalacao de Docker e AWS CLI via `user_data`
 
 ## Observacoes
 
 - a aplicacao escuta na porta interna `3000`
 - o container publica `80:3000` na EC2
 - o `HEALTHCHECK` usa `/health`
-- o deploy na EC2 e manual
+- o deploy na EC2 e automatico via GitHub Actions

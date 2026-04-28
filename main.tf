@@ -94,7 +94,7 @@ resource "aws_instance" "app" {
 
   user_data = <<-EOF
               #!/bin/bash
-              yum install -y docker
+              yum install -y docker awscli
               systemctl enable docker
               systemctl start docker
               usermod -a -G docker ec2-user
@@ -103,4 +103,9 @@ resource "aws_instance" "app" {
 
 resource "aws_s3_bucket" "bucket" {
   bucket = var.bucket_name
+}
+
+output "ec2_public_ip" {
+  description = "Public IP of the application instance."
+  value       = aws_instance.app.public_ip
 }
