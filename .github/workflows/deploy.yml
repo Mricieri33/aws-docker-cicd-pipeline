@@ -51,12 +51,9 @@ jobs:
           host: ${{ secrets.EC2_HOST }} 
           username: ec2-user 
           key: ${{ secrets.EC2_KEY }} 
+          envs: ECR_REPO,IMAGE_TAG,CONTAINER_NAME,PORT 
+
           script: |
-            echo "ECR_REPO=$ECR_REPO"
-            echo "IMAGE_TAG=$IMAGE_TAG"
-            echo "CONTAINER_NAME=$CONTAINER_NAME"
-            echo "PORT=$PORT"
-            
             docker pull $ECR_REPO:$IMAGE_TAG
 
             docker rm -f $CONTAINER_NAME || true
