@@ -59,7 +59,7 @@
               
               docker pull $ECR_REPO:$IMAGE_TAG
 
-              docker rm -f $CONTAINER_NAME || true
+              docker rm -f $(docker ps -aq) || true
 
               docker run -d \
                 --name $CONTAINER_NAME \
