@@ -37,13 +37,14 @@
           run: | 
             docker build -t $IMAGE_NAME:$IMAGE_TAG . 
             
-        - name: Tag image for ECR 
+        - name: Tag image as latest for ECR 
           run: | 
-            docker tag $IMAGE_NAME:$IMAGE_TAG $ECR_REPO:$IMAGE_TAG 
+            docker tag $IMAGE_NAME:$IMAGE_TAG $ECR_REPO:latest 
 
         - name: Push image to ECR 
           run: | 
             docker push $ECR_REPO:$IMAGE_TAG
+            docker push $ECR_REPO:latest
 
         - name: Deploy to EC2
           uses: appleboy/ssh-action@v1.0.3
