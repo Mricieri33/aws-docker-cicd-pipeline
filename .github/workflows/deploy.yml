@@ -40,7 +40,7 @@
         - name: Tag image for ECR (SHA)
           run: |
             docker tag $IMAGE_NAME:$IMAGE_TAG $ECR_REPO:$IMAGE_TAG
-            
+
         - name: Tag image as latest for ECR 
           run: | 
             docker tag $IMAGE_NAME:$IMAGE_TAG $ECR_REPO:latest 
@@ -63,6 +63,8 @@
               | docker login --username AWS --password-stdin $ECR_REPO
               
               docker pull $ECR_REPO:$IMAGE_TAG
+
+              docker tag $ECR_REPO:$IMAGE_TAG $ECR_REPO:latest
 
               docker ps -q --filter "publish=80" | xargs -r docker rm -f
 
