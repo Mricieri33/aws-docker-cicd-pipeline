@@ -1,64 +1,67 @@
-name: Deploy to AWS (ECR + EC2)
+  name: Deploy to AWS (ECR + EC2)
 
-on:
-  push:
-    branches:
-      - main
-  workflow_dispatch:
+  on:
+    push:
+      branches:
+        - main
+    workflow_dispatch:
 
-env: 
-  AWS_REGION: ${{ secrets.AWS_REGION }}
-  ECR_REPO: ${{ secrets.ECR_REPO }}
-  CONTAINER_NAME: devops-app
-  PORT: 80
-  IMAGE_NAME: mricieri-devops-app
+  env: 
+    AWS_REGION: ${{ secrets.AWS_REGION }}
+    ECR_REPO: ${{ secrets.ECR_REPO }}
+    CONTAINER_NAME: devops-app
+    PORT: 80
+    IMAGE_NAME: mricieri-devops-app
 
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
+  jobs:
+    deploy:
+      runs-on: ubuntu-latest
 
-    steps:
-      - uses: actions/checkout@v3
+      steps:
+        - uses: actions/checkout@v3
 
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_KEY }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET }}
-          aws-region: ${{ env.AWS_REGION }}
+        - name: Configure AWS Credentials
+          uses: aws-actions/configure-aws-credentials@v2
+          with:
+            aws-access-key-id: ${{ secrets.AWS_KEY }}
+            aws-secret-access-key: ${{ secrets.AWS_SECRET }}
+            aws-region: ${{ env.AWS_REGION }}
 
-      - name: Login to ECR
-        uses: aws-actions/amazon-ecr-login@v2 
+        - name: Login to ECR
+          uses: aws-actions/amazon-ecr-login@v2 
 
-      - name: Set image tag (commit SHA)
-        run: echo "IMAGE_TAG=${GITHUB_SHA}" >> $GITHUB_ENV
+        - name: Set image tag (commit SHA)
+          run: echo "IMAGE_TAG=${GITHUB_SHA}" >> $GITHUB_ENV
+              
+        - name: Build Docker image
+          run: | 
+            docker build -t $IMAGE_NAME:$IMAGE_TAG . 
             
-      - name: Build Docker image
-        run: | 
-          docker build -t $IMAGE_NAME:$IMAGE_TAG . 
-          
-      - name: Tag image for ECR 
-        run: | 
-          docker tag $IMAGE_NAME:$IMAGE_TAG $ECR_REPO:$IMAGE_TAG 
+        - name: Tag image for ECR 
+          run: | 
+            docker tag $IMAGE_NAME:$IMAGE_TAG $ECR_REPO:$IMAGE_TAG 
 
-      - name: Push image to ECR 
-        run: | 
-          docker push $ECR_REPO:$IMAGE_TAG
+        - name: Push image to ECR 
+          run: | 
+            docker push $ECR_REPO:$IMAGE_TAG
 
-      - name: Deploy to EC2
-        uses: appleboy/ssh-action@v1.0.3
-        with: 
-          host: ${{ secrets.EC2_HOST }} 
-          username: ec2-user 
-          key: ${{ secrets.EC2_KEY }} 
-          envs: ECR_REPO,IMAGE_TAG,CONTAINER_NAME,PORT 
+        - name: Deploy to EC2
+          uses: appleboy/ssh-action@v1.0.3
+          with: 
+            host: ${{ secrets.EC2_HOST }} 
+            username: ec2-user 
+            key: ${{ secrets.EC2_KEY }} 
+            envs: ECR_REPO,IMAGE_TAG,CONTAINER_NAME,PORT,AWS_REGION
 
-          script: |
-            docker pull $ECR_REPO:$IMAGE_TAG
+            script: |
+              aws ecr get-login-password --region $AWS_REGION \
+              | docker login --username AWS --password-stdin $ECR_REPO
+              
+              docker pull $ECR_REPO:$IMAGE_TAG
 
-            docker rm -f $CONTAINER_NAME || true
+              docker rm -f $CONTAINER_NAME || true
 
-            docker run -d \
-              --name $CONTAINER_NAME \
-              -p $PORT:3000 \
-              $ECR_REPO:$IMAGE_TAG
+              docker run -d \
+                --name $CONTAINER_NAME \
+                -p $PORT:3000 \
+                $ECR_REPO:$IMAGE_TAG
