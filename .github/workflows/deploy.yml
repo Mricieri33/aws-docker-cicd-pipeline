@@ -11,7 +11,7 @@ env:
   ECR_REPO: ${{ secrets.ECR_REPO }}
   CONTAINER_NAME: devops-app
   PORT: 80
-  IMAGE_NAME: devops-app
+  IMAGE_NAME: mricieri-devops-app
 
 jobs:
   deploy:
@@ -52,8 +52,15 @@ jobs:
           username: ec2-user 
           key: ${{ secrets.EC2_KEY }} 
           script: |
+            echo "ECR_REPO=$ECR_REPO"
+            echo "IMAGE_TAG=$IMAGE_TAG"
+            echo "CONTAINER_NAME=$CONTAINER_NAME"
+            echo "PORT=$PORT"
+            
             docker pull $ECR_REPO:$IMAGE_TAG
+
             docker rm -f $CONTAINER_NAME || true
+
             docker run -d \
               --name $CONTAINER_NAME \
               -p $PORT:3000 \

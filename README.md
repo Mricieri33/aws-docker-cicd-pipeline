@@ -1,132 +1,41 @@
-# AWS Docker CI/CD Pipeline
+![act-logo](https://raw.githubusercontent.com/wiki/nektos/act/img/logo-150.png)
 
-Aplicacao Node.js empacotada com Docker, publicada no Amazon ECR via GitHub Actions e implantada automaticamente em uma EC2.
+# Overview [![push](https://github.com/nektos/act/workflows/push/badge.svg?branch=master&event=push)](https://github.com/nektos/act/actions) [![Go Report Card](https://goreportcard.com/badge/github.com/nektos/act)](https://goreportcard.com/report/github.com/nektos/act) [![awesome-runners](https://img.shields.io/badge/listed%20on-awesome--runners-blue.svg)](https://github.com/jonico/awesome-runners)
 
-## Fluxo
+> "Think globally, `act` locally"
 
-```text
-Codigo
-  ↓
-GitHub
-  ↓
-GitHub Actions
-  ↓
-Docker Build
-  ↓
-Amazon ECR
-  ↓
-EC2
-  ↓
-Browser
-```
+Run your [GitHub Actions](https://developer.github.com/actions/) locally! Why would you want to do this? Two reasons:
 
-## Componentes
+- **Fast Feedback** - Rather than having to commit/push every time you want to test out the changes you are making to your `.github/workflows/` files (or for any changes to embedded GitHub actions), you can use `act` to run the actions locally. The [environment variables](https://help.github.com/en/actions/configuring-and-managing-workflows/using-environment-variables#default-environment-variables) and [filesystem](https://help.github.com/en/actions/reference/virtual-environments-for-github-hosted-runners#filesystems-on-github-hosted-runners) are all configured to match what GitHub provides.
+- **Local Task Runner** - I love [make](<https://en.wikipedia.org/wiki/Make_(software)>). However, I also hate repeating myself. With `act`, you can use the GitHub Actions defined in your `.github/workflows/` to replace your `Makefile`!
 
-- aplicacao Express em `index.js`
-- imagem Docker definida em `Dockerfile`
-- workflow de build, push e deploy em `.github/workflows/deploy.yml`
-- infraestrutura base em `main.tf`
+> [!TIP]
+> **Now Manage and Run Act Directly From VS Code!**<br/>
+> Check out the [GitHub Local Actions](https://sanjulaganepola.github.io/github-local-actions-docs/) Visual Studio Code extension which allows you to leverage the power of `act` to run and test workflows locally without leaving your editor.
 
-## Endpoints
+# How Does It Work?
 
-- `/health` usado pelo `HEALTHCHECK` do Docker para validar se a aplicacao respondeu com `200 OK`
-- `/s3-check`
+When you run `act` it reads in your GitHub Actions from `.github/workflows/` and determines the set of actions that need to be run. It uses the Docker API to either pull or build the necessary images, as defined in your workflow files and finally determines the execution path based on the dependencies that were defined. Once it has the execution path, it then uses the Docker API to run containers for each action based on the images prepared earlier. The [environment variables](https://help.github.com/en/actions/configuring-and-managing-workflows/using-environment-variables#default-environment-variables) and [filesystem](https://docs.github.com/en/actions/using-github-hosted-runners/about-github-hosted-runners#file-systems) are all configured to match what GitHub provides.
 
-## Pipeline
+Let's see it in action with a [sample repo](https://github.com/cplee/github-actions-demo)!
 
-O workflow [`deploy.yml`](/home/mricieri33/App/.github/workflows/deploy.yml:1) faz:
+![Demo](https://raw.githubusercontent.com/wiki/nektos/act/quickstart/act-quickstart-2.gif)
 
-1. checkout do codigo
-2. configuracao das credenciais AWS
-3. login no ECR
-4. build da imagem Docker
-5. tag com o `GITHUB_SHA`
-6. push da imagem para o ECR com as tags `GITHUB_SHA` e `latest`
-7. execucao remota na EC2 via AWS Systems Manager (SSM)
-8. pull da nova imagem
-9. remocao do container atual
-10. subida do novo container
-11. validacao do endpoint `/health`
+# Act User Guide
 
-### Secrets obrigatorios
+Please look at the [act user guide](https://nektosact.com) for more documentation.
 
-- `AWS_KEY`
-- `AWS_SECRET`
-- `AWS_REGION`
-- `ECR_REPO`
+# Support
 
-`EC2_INSTANCE_ID` deixa de ser obrigatorio se a instancia puder ser encontrada pela tag `Name`.
+Need help? Ask in [discussions](https://github.com/nektos/act/discussions)!
 
-### Variables opcionais
+# Contributing
 
-- `IMAGE_NAME`
-- `CONTAINER_NAME`
-- `HOST_PORT`
-- `CONTAINER_PORT`
-- `EC2_TAG_NAME`
+Want to contribute to act? Awesome! Check out the [contributing guidelines](CONTRIBUTING.md) to get involved.
 
-Se as variables nao forem definidas, o workflow usa:
+## Manually building from source
 
-- `IMAGE_NAME=devops-app`
-- `CONTAINER_NAME=devops-app`
-- `HOST_PORT=80`
-- `CONTAINER_PORT=3000`
-- `EC2_TAG_NAME=app-ec2`
-
-## Deploy automatico na EC2
-
-### Pre-requisitos
-
-- EC2 com Docker e AWS CLI
-- SSM Agent ativa na EC2
-- IAM Role na EC2 com permissao de leitura no ECR e `AmazonSSMManagedInstanceCore`
-- porta `80` liberada no Security Group
-
-### Fluxo de troca do container
-
-Quando houver push na branch `main` ou execucao manual do workflow:
-
-```bash
-aws ssm send-command --instance-ids <EC2_INSTANCE_ID> ...
-docker pull <ECR_REPO>:<GITHUB_SHA>
-docker rm -f <CONTAINER_NAME> || true
-docker run -d --name <CONTAINER_NAME> --restart unless-stopped -p <HOST_PORT>:<CONTAINER_PORT> <ECR_REPO>:<GITHUB_SHA>
-curl http://127.0.0.1:<HOST_PORT>/health
-```
-
-Se `EC2_INSTANCE_ID` nao estiver definido, a Action procura uma unica instancia em estado `running` com `tag:Name=<EC2_TAG_NAME>`. Se nenhuma ou mais de uma instancia for encontrada, o job falha antes do `send-command` com erro explicito.
-
-O deploy remove o container atual e sobe o novo automaticamente pela Action.
-
-## Execucao local
-
-```bash
-npm install
-npm start
-```
-
-Ou com Docker:
-
-```bash
-docker build -t devops-app .
-docker run -p 3000:3000 devops-app
-```
-
-## Infraestrutura
-
-O [`main.tf`](/home/mricieri33/App/main.tf:1) prepara:
-
-- EC2
-- Security Group com `80`
-- IAM Role/Profile para leitura no ECR e gerenciamento por SSM
-- bucket S3 parametrizado
-- instalacao de Docker e AWS CLI via `user_data`
-- inicializacao do `amazon-ssm-agent`
-
-## Observacoes
-
-- a aplicacao escuta na porta interna `3000`
-- o container publica `80:3000` na EC2
-- o `HEALTHCHECK` usa `/health`
-- o deploy na EC2 e automatico via GitHub Actions
-- a Action nao depende de SSH aberto na internet
+- Install Go tools 1.20+ - (<https://golang.org/doc/install>)
+- Clone this repo `git clone git@github.com:nektos/act.git`
+- Run unit tests with `make test`
+- Build and install: `make install`
