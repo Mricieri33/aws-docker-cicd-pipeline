@@ -1,57 +1,64 @@
-# App Devops AWS CI/CD
+# AWS Docker CI/CD Pipeline
 
-Projeto de pipeline completo integrando Node.js, Docker, Terraform e GitHub Actions para deploy automatizado na AWS (EC2 + ECR).
+Pipeline integrado utilizando Node.js, Docker, Terraform e GitHub Actions para deploy automatizado na AWS (ECR e EC2).
 
-## 🚀 Arquitetura e Componentes
+## Arquitetura
 
-- **Aplicação (`index.js`):** API em Node.js (Express) com endpoints `/health` e `/s3-check`.
-- **Container (`Dockerfile`):** Empacota a aplicação expondo a porta 3000.
-- **Infraestrutura (`main.tf`):** Código Terraform que provisiona uma instância EC2 (já com Docker instalado), Security Group liberando a porta 80, um bucket S3 e as IAM Roles necessárias.
-- **CI/CD (`deploy.yml`):** Workflow do GitHub Actions que faz o build, envia a imagem para o ECR e realiza o deploy na EC2.
+*   **Aplicacao:** API Node.js (Express) com rotas e interface em HTML.
+*   **Container:** Dockerfile para empacotamento.
+*   **Infraestrutura:** Terraform para provisionar EC2 (com Docker e AWS CLI instalados), S3, IAM Roles e Security Group liberando a porta 80.
+*   **Automacao:** Workflow do GitHub Actions (deploy.yml) realiza o build, atualiza o ECR com as tags `SHA` e `latest`, remove containers antigos da porta 80 e sobe a nova versao na EC2 via SSH.
 
 ---
 
-## 💻 Como Rodar Localmente
+## Passo a Passo: Execucao Local
 
-**Sem Docker:**
+### Via Node.js
+1. Instale as dependencias:
 ```bash
 npm install
+```
+2. Execute a aplicacao:
+```bash
 npm start
 ```
 
-**Com Docker:**
+### Via Docker
+1. Faca o build da imagem:
 ```bash
 docker build -t app-devops .
+```
+2. Execute o container:
+```bash
 docker run -p 3000:3000 app-devops
 ```
-A aplicação estará disponível em `http://localhost:3000`.
+Acesse `http://localhost:3000`.
 
 ---
 
-## ☁️ Como Subir a Infraestrutura (AWS)
+## Passo a Passo: Infraestrutura AWS
 
-Utilize o Terraform para provisionar os recursos necessários na sua conta AWS:
+Utilize o Terraform para provisionar a base do projeto na sua conta AWS:
 
+1. Inicialize o diretorio:
 ```bash
 terraform init
+```
+2. Crie a infraestrutura (substitua pelo nome desejado para o bucket):
+```bash
 terraform apply -var="bucket_name=NOME_DO_SEU_BUCKET_UNICO"
 ```
-*O output retornará o IP público da sua EC2.*
+Ao final da execucao, o terminal exibira o IP publico da instancia EC2 gerada.
 
 ---
 
-## 🔄 Como Funciona o Deploy Automático
+## Passo a Passo: Deploy Automatico
 
-A pipeline de CI/CD é acionada a cada `push` na branch `main`. Para que ela funcione, você precisa configurar os seguintes **Secrets** nas configurações do seu repositório no GitHub:
+O GitHub Actions cuida do deploy a cada novo push na branch `main`. Para configurar o ambiente, cadastre os seguintes **Secrets** no seu repositorio do GitHub:
 
-- `AWS_KEY` (Sua Access Key da AWS)
-- `AWS_SECRET` (Sua Secret Key da AWS)
-- `AWS_REGION` (Ex: `us-east-1`)
-- `ECR_REPO` (A URI do seu repositório criado no Amazon ECR)
-- `EC2_HOST` (O IP Público da instância EC2 criada pelo Terraform)
-- `EC2_KEY` (O conteúdo da chave `.pem` para acesso SSH à EC2)
-
-### O que o workflow faz:
-1. Conecta na AWS e faz login no Amazon ECR.
-2. Faz o build da imagem Docker baseada no seu commit e envia (push) para o ECR.
-3. Conecta via SSH na EC2 e roda a nova imagem na porta 80 (mapeando para a 3000 do container), substituindo a versão anterior automaticamente.
+*   `AWS_KEY`: Sua Access Key ID
+*   `AWS_SECRET`: Sua Secret Access Key
+*   `AWS_REGION`: Regiao AWS (exemplo: `us-east-1`)
+*   `ECR_REPO`: URI do seu repositorio no ECR
+*   `EC2_HOST`: IP publico da EC2 (obtido no output do Terraform)
+*   `EC2_KEY`: Chave SSH (arquivo `.pem`) para acessar a EC2
