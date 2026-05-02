@@ -1,3 +1,13 @@
+terraform {
+  backend "s3" {
+    bucket = "mricieri-devops-33"
+    key    = "app/terraform.tfstate"
+    region = "us-east-1"
+    dynamodb_table = "terraform-lock"
+    encrypt = true
+  }
+}
+
 variable "aws_region" {
   description = "AWS region for the infrastructure."
   type        = string
@@ -13,7 +23,7 @@ variable "app_ami" {
 variable "instance_type" {
   description = "EC2 instance type."
   type        = string
-  default     = "t2.micro"
+  default     = "t3.micro"
 }
 
 variable "bucket_name" {
@@ -40,6 +50,11 @@ resource "aws_iam_role" "ec2_role" {
       }
     ]
   })
+}
+
+resource "aws_iam_role_policy_attachment" "s3_access" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
 }
 
 resource "aws_iam_role_policy_attachment" "ecr_readonly" {
@@ -89,12 +104,18 @@ resource "aws_instance" "app" {
 
   user_data = <<-EOF
               #!/bin/bash
-              yum install -y docker awscli
+              yum update -y
+              yum install -y git docker unzip
+              yum install -y awscli
+              cd /tmp
+              wget https://releases.hashicorp.com/terraform/1.6.6/terraform_1.6.6_linux_amd64.zip
+              unzip terraform_1.6.6_linux_amd64.zip
+              mv terraform /usr/local/bin/
               systemctl enable docker
               systemctl start docker
               systemctl enable amazon-ssm-agent
               systemctl start amazon-ssm-agent
-              usermod -a -G docker ec2-user
+              usermod -aG docker ec2-user
               EOF
 }
 

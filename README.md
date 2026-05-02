@@ -62,3 +62,4 @@ O GitHub Actions cuida do deploy a cada novo push na branch `main`. Para configu
 *   `ECR_REPO`: URI do seu repositorio no ECR
 *   `EC2_HOST`: IP publico da EC2 (obtido no output do Terraform)
 *   `EC2_KEY`: Chave SSH (arquivo `.pem`) para acessar a EC2
+t
