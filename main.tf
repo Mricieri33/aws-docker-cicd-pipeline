@@ -1,10 +1,10 @@
 terraform {
   backend "s3" {
-    bucket = "mricieri-devops-33"
-    key    = "app/terraform.tfstate"
-    region = "us-east-1"
+    bucket         = "mricieri-devops-33"
+    key            = "app/terraform.tfstate"
+    region         = "us-east-1"
     dynamodb_table = "terraform-lock"
-    encrypt = true
+    encrypt        = true
   }
 }
 
@@ -31,45 +31,14 @@ variable "bucket_name" {
   type        = string
 }
 
+variable "ec2_instance_profile_name" {
+  description = "Existing IAM instance profile name attached to the EC2 instance role (for example, the profile for ec2-ecr-role)."
+  type        = string
+  default     = "app-ec2-profile"
+}
+
 provider "aws" {
   region = var.aws_region
-}
-
-resource "aws_iam_role" "ec2_role" {
-  name = "terraform-ec2-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "ec2.amazonaws.com"
-        }
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "s3_access" {
-  role       = aws_iam_role.ec2_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
-}
-
-resource "aws_iam_role_policy_attachment" "ecr_readonly" {
-  role       = aws_iam_role.ec2_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
-}
-
-resource "aws_iam_role_policy_attachment" "ssm_core" {
-  role       = aws_iam_role.ec2_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-}
-
-resource "aws_iam_instance_profile" "ec2_profile" {
-  name = "app-ec2-profile"
-  role = aws_iam_role.ec2_role.name
 }
 
 resource "aws_security_group" "app_sg" {
@@ -93,9 +62,9 @@ resource "aws_security_group" "app_sg" {
 }
 
 resource "aws_instance" "app" {
-  ami           = var.app_ami
-  instance_type = var.instance_type
-  iam_instance_profile = aws_iam_instance_profile.ec2_profile.name
+  ami                    = var.app_ami
+  instance_type          = var.instance_type
+  iam_instance_profile   = var.ec2_instance_profile_name
   vpc_security_group_ids = [aws_security_group.app_sg.id]
 
   tags = {
