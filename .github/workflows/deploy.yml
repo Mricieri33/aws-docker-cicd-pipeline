@@ -1,0 +1,122 @@
+name: AWS Docker CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env: 
+  # Região da AWS
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  # Repositório ECR completo
+  ECR_REPO: ${{ secrets.ECR_REPO }}
+  # Endpoint do ECR para login
+  ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
+  # Configurações do container
+  CONTAINER_NAME: ${{ vars.CONTAINER_NAME }}
+  PORT: ${{ vars.HOST_PORT }}
+  # Nome da imagem base
+  IMAGE_NAME: mricieri-devops-app
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Baixa o código do repositório
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # Configura credenciais da AWS para os próximos passos
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_KEY }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Autentica no Amazon ECR do GitHub Actions
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2 
+
+      # Define a tag da imagem baseada no hash do commit
+      - name: Set image tag (commit SHA)
+        run: echo "IMAGE_TAG=${GITHUB_SHA}" >> $GITHUB_ENV
+          
+      # Realiza o build da imagem Docker
+      - name: Build Docker image
+        run: | 
+          docker build -t $IMAGE_NAME:$IMAGE_TAG . 
+
+      # Taggea a imagem para o ECR com o hash
+      - name: Tag image for ECR (SHA)
+        run: |
+          docker tag $IMAGE_NAME:$IMAGE_TAG $ECR_REPO:$IMAGE_TAG
+
+      # Taggea a imagem como latest
+      - name: Tag image as latest for ECR 
+        run: | 
+          docker tag $IMAGE_NAME:$IMAGE_TAG $ECR_REPO:latest 
+
+      # Faz o push das imagens para o ECR
+      - name: Push image to ECR 
+        run: | 
+          docker push $ECR_REPO:$IMAGE_TAG
+          docker push $ECR_REPO:latest
+      
+      # Instala e configura o Terraform
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      # Inicializa os módulos do Terraform
+      - name: Run Terraform Init
+        run: terraform init
+
+      # Aplica as configurações do Terraform para provisionar a EC2
+      - name: Run Terraform Apply
+        run: |
+          terraform apply \
+            -auto-approve \
+            -var="bucket_name=app-storage-mricieri-devops-33"
+
+      # Captura o IP público da EC2 criada
+      - name: Get App EC2 IP
+        id: get-ip
+        run: |
+          echo "APP_EC2_IP=$(terraform output -raw ec2_public_ip)" >> $GITHUB_ENV
+
+      # Acessa a EC2 via SSH e realiza o deploy do container
+      - name: Deploy to App EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with: 
+          host: ${{ env.APP_EC2_IP }} 
+          username: ec2-user 
+          key: ${{ secrets.EC2_KEY }} 
+          script: |
+            # Configurando variáveis de ambiente
+            export AWS_REGION='${{ env.AWS_REGION }}'
+            export ECR_REPO='${{ env.ECR_REPO }}'
+            export IMAGE_TAG='${{ env.IMAGE_TAG }}'
+            export CONTAINER_NAME='${{ env.CONTAINER_NAME }}'
+            export PORT='${{ env.PORT }}'
+            export ECR_REGISTRY='${{ env.ECR_REGISTRY }}'
+            
+            # Autenticando no ECR dentro da EC2
+            aws ecr get-login-password --region $AWS_REGION \
+            | docker login --username AWS --password-stdin $ECR_REGISTRY
+            
+            # Baixando a imagem do ECR
+            docker pull $ECR_REPO:$IMAGE_TAG
+            
+            # Removendo container antigo para evitar conflitos
+            docker rm -f $CONTAINER_NAME || true
+            
+            # Subindo nova versão do container
+            docker run -d \
+              --name $CONTAINER_NAME \
+              -p $PORT:3000 \
+              $ECR_REPO:$IMAGE_TAG
+
+            # Lista containers ativos
+            docker ps

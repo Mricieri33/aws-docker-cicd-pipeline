@@ -1,0 +1,12 @@
+node_modules/
+
+.terraform/
+*.tfstate
+*.tfstate.*
+
+*.log
+
+.DS_Store
+
+*.pem
+*.deb
